@@ -525,7 +525,10 @@ const getBroadSpatialInteractionDistance = (
     srj.minTraceWidth / 2,
   )
   const traceClearance =
-    (RELAXED_DRC_OPTIONS.traceClearance ?? 0.1) + CLEARANCE_SLACK
+    Math.max(
+      RELAXED_DRC_OPTIONS.traceClearance ?? 0.1,
+      srj.minTraceToPadEdgeClearance ?? 0,
+    ) + CLEARANCE_SLACK
 
   return Math.max(
     maxViaRadius * 2 + PREFERRED_VIA_TO_VIA_CLEARANCE + CLEARANCE_SLACK,
@@ -2701,7 +2704,10 @@ const pushViaSegmentPair = (
   const requiredDistance =
     via.radius +
     segment.radius +
-    (RELAXED_DRC_OPTIONS.traceClearance ?? 0.1) +
+    Math.max(
+      RELAXED_DRC_OPTIONS.traceClearance ?? 0.1,
+      srj.minTraceToPadEdgeClearance ?? 0,
+    ) +
     CLEARANCE_SLACK
   const penetration = requiredDistance - distance
   if (penetration <= 0) return false
