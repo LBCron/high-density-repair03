@@ -4010,14 +4010,14 @@ export const applySafeTraceLayerMoveForError = (
       return undefined
     }
     if (!adjustViaClearance) return escape
-    const clearEscape = findPadClearanceViaPosition(
+    const clearEscape = findPadClearanceViaPosition({
       srj,
       route,
-      escape,
+      preferred: escape,
       viaRadius,
-      [segment.z, targetZ],
+      zLayers: [segment.z, targetZ],
       connMap,
-    )
+    })
     relocatedVia ||= clearEscape !== undefined && clearEscape !== escape
     return clearEscape
   }
@@ -4575,12 +4575,12 @@ const getViaDisplacementTarget = (params: {
   )
   const candidateTargets = [
     initialTarget,
-    ...findTraceClearanceViaPositions(
+    ...findTraceClearanceViaPositions({
       via,
       segments,
-      requiredTraceDistance - via.radius - segment.radius,
+      clearance: requiredTraceDistance - via.radius - segment.radius,
       connMap,
-    ),
+    }),
     ...blockingObstacles.flatMap((obstacle) =>
       getObstacleEscapePoints({
         point: initialTarget,

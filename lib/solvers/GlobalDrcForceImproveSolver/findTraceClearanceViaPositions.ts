@@ -15,16 +15,51 @@ import type { Point, Segment, ViaNode } from "./internalTypes"
 import { sharesNet } from "./netUtils"
 import { MAX_ERROR_MOVE, POSITION_EPSILON } from "./solverConfig"
 
+type TraceClearanceViaPositionOptions = {
+  via: ViaNode
+  segments: readonly Segment[]
+  clearance: number
+  connMap?: ConnectivityMap
+}
+type TraceClearanceConstraint = {
+  segment: Segment
+  required: number
+}
+type TraceClearanceViaSearch = {
+  via: ViaNode
+  constraints: readonly TraceClearanceConstraint[]
+  candidates: Point[]
+}
+
+const considerTraceClearanceViaPosition = (
+  point: Point,
+  search: TraceClearanceViaSearch,
+): void => {
+  if (
+    distSq(point, search.via) > MAX_ERROR_MOVE ** 2 ||
+    search.candidates.some(
+      (candidate) => distSq(candidate, point) < POSITION_EPSILON ** 2,
+    ) ||
+    search.constraints.some(
+      ({ segment, required }) =>
+        pointToSegmentDistance(point, segment.start, segment.end) < required,
+    )
+  ) {
+    return
+  }
+  search.candidates.push(point)
+}
+
 /**
  * Finds local via placements on the clearance capsules of neighboring traces.
  * The caller checks pads, attached traces, and complete-board DRC.
  */
-export const findTraceClearanceViaPositions = (
-  via: ViaNode,
-  segments: readonly Segment[],
-  clearance: number,
-  connMap?: ConnectivityMap,
-): Point[] => {
+export const findTraceClearanceViaPositions = ({
+  via,
+  segments,
+  clearance,
+  connMap,
+}: TraceClearanceViaPositionOptions): Point[] => {
   const minZ = Math.min(...via.zLayers)
   const maxZ = Math.max(...via.zLayers)
   const constraints = segments
@@ -68,31 +103,22 @@ export const findTraceClearanceViaPositions = (
       (boundary) =>
         pointToBoundsDistance(via, boundary.bounds) <= MAX_ERROR_MOVE,
     )
-  const candidates: Point[] = []
-  const consider = (point: Point) => {
-    if (
-      distSq(point, via) > MAX_ERROR_MOVE ** 2 ||
-      candidates.some(
-        (candidate) => distSq(candidate, point) < POSITION_EPSILON ** 2,
-      ) ||
-      constraints.some(
-        ({ segment, required }) =>
-          pointToSegmentDistance(point, segment.start, segment.end) < required,
-      )
-    ) {
-      return
-    }
-    candidates.push(point)
+  const search: TraceClearanceViaSearch = {
+    via,
+    constraints,
+    candidates: [],
   }
-  consider(via)
+  considerTraceClearanceViaPosition(via, search)
   for (let left = 0; left < boundaries.length; left += 1) {
     const a = boundaries[left]!
-    for (const point of boundaryProjections(via, a)) consider(point)
+    for (const point of boundaryProjections(via, a))
+      considerTraceClearanceViaPosition(point, search)
     for (let right = left + 1; right < boundaries.length; right += 1) {
       const b = boundaries[right]!
       if (!doBoundsOverlap(a.bounds, b.bounds)) continue
-      for (const point of boundaryIntersections(a, b)) consider(point)
+      for (const point of boundaryIntersections(a, b))
+        considerTraceClearanceViaPosition(point, search)
     }
   }
-  return candidates.sort((a, b) => distSq(a, via) - distSq(b, via))
+  return search.candidates.sort((a, b) => distSq(a, via) - distSq(b, via))
 }

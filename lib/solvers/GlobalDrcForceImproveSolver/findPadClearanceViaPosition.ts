@@ -41,13 +41,28 @@ type PadRegion = {
   clearance: number
   bounds: Bounds
 }
+type PadClearanceViaPositionOptions = {
+  srj: SimpleRouteJson
+  route: HighDensityRoute
+  preferred: Point
+  viaRadius: number
+  zLayers: readonly number[]
+  connMap?: ConnectivityMap
+}
+type PadClearanceViaSearch = {
+  preferred: Point
+  board: Bounds
+  pads: readonly PadRegion[]
+  best?: Point
+  bestDistance: number
+}
 
 const projectToBounds = (point: Point, bounds: Bounds): Point => ({
   x: clamp(point.x, bounds.minX, bounds.maxX),
   y: clamp(point.y, bounds.minY, bounds.maxY),
 })
 
-const distanceToPad = (point: Point, pad: PadRegion) => {
+const distanceToPad = (point: Point, pad: PadRegion): number => {
   const dx = point.x - pad.center.x
   const dy = point.y - pad.center.y
   if (pad.circular) return Math.max(0, Math.hypot(dx, dy) - pad.halfWidth)
@@ -57,6 +72,27 @@ const distanceToPad = (point: Point, pad: PadRegion) => {
     minY: -pad.halfHeight,
     maxY: pad.halfHeight,
   })
+}
+
+const isViaPositionFeasible = (
+  point: Point,
+  search: PadClearanceViaSearch,
+): boolean =>
+  isPointInsideBounds(point, search.board) &&
+  search.pads.every((pad) => distanceToPad(point, pad) >= pad.clearance)
+
+const considerPadClearanceViaPosition = (
+  candidate: Point,
+  search: PadClearanceViaSearch,
+): void => {
+  const candidateDistance = distSq(candidate, search.preferred)
+  if (
+    candidateDistance < search.bestDistance &&
+    isViaPositionFeasible(candidate, search)
+  ) {
+    search.best = candidate
+    search.bestDistance = candidateDistance
+  }
 }
 
 export const createLine = (start: Point, end: Point): Line => ({
@@ -82,20 +118,30 @@ const getPadBoundaries = (pad: PadRegion): Boundary[] => {
   // cannot turn a geometrically valid new via into a clearance violation.
   const margin = pad.clearance + POSITION_EPSILON
   if (pad.circular) return [createCircle(pad.center, pad.halfWidth + margin)]
-  const world = (x: number, y: number) =>
-    applyToPoint(pad.localToWorld, { x, y })
   const { halfWidth: w, halfHeight: h } = pad
   return [
-    createLine(world(-w, -h - margin), world(w, -h - margin)),
-    createLine(world(w + margin, -h), world(w + margin, h)),
-    createLine(world(w, h + margin), world(-w, h + margin)),
-    createLine(world(-w - margin, h), world(-w - margin, -h)),
+    createLine(
+      applyToPoint(pad.localToWorld, { x: -w, y: -h - margin }),
+      applyToPoint(pad.localToWorld, { x: w, y: -h - margin }),
+    ),
+    createLine(
+      applyToPoint(pad.localToWorld, { x: w + margin, y: -h }),
+      applyToPoint(pad.localToWorld, { x: w + margin, y: h }),
+    ),
+    createLine(
+      applyToPoint(pad.localToWorld, { x: w, y: h + margin }),
+      applyToPoint(pad.localToWorld, { x: -w, y: h + margin }),
+    ),
+    createLine(
+      applyToPoint(pad.localToWorld, { x: -w - margin, y: h }),
+      applyToPoint(pad.localToWorld, { x: -w - margin, y: -h }),
+    ),
     // Full circles simplify intersections; the global shape test rejects
     // their inward portions, retaining exactly the rounded corner arcs.
-    createCircle(world(-w, -h), margin),
-    createCircle(world(w, -h), margin),
-    createCircle(world(w, h), margin),
-    createCircle(world(-w, h), margin),
+    createCircle(applyToPoint(pad.localToWorld, { x: -w, y: -h }), margin),
+    createCircle(applyToPoint(pad.localToWorld, { x: w, y: -h }), margin),
+    createCircle(applyToPoint(pad.localToWorld, { x: w, y: h }), margin),
+    createCircle(applyToPoint(pad.localToWorld, { x: -w, y: h }), margin),
   ]
 }
 
@@ -185,13 +231,13 @@ export const boundaryIntersections = (
   ]
 }
 
-const getPadRegions = (
-  srj: SimpleRouteJson,
-  route: HighDensityRoute,
-  viaRadius: number,
-  zLayers: readonly number[],
-  connMap?: ConnectivityMap,
-): PadRegion[] => {
+const getPadRegions = ({
+  srj,
+  route,
+  viaRadius,
+  zLayers,
+  connMap,
+}: Omit<PadClearanceViaPositionOptions, "preferred">): PadRegion[] => {
   const layers = new Set(
     range(
       srj.allowBlindAndBuriedVias ? Math.min(...zLayers) : 0,
@@ -257,14 +303,14 @@ const getPadRegions = (
  * clearance regions. This computes geometry only: the existing route-candidate
  * DRC evaluation still checks its adjacent traces and all other constraints.
  */
-export const findPadClearanceViaPosition = (
-  srj: SimpleRouteJson,
-  route: HighDensityRoute,
-  preferred: Point,
-  viaRadius: number,
-  zLayers: readonly number[],
-  connMap?: ConnectivityMap,
-): Point | undefined => {
+export const findPadClearanceViaPosition = ({
+  srj,
+  route,
+  preferred,
+  viaRadius,
+  zLayers,
+  connMap,
+}: PadClearanceViaPositionOptions): Point | undefined => {
   const boardMargin = viaRadius + (srj.minBoardEdgeClearance ?? 0)
   const board: Bounds = {
     minX: srj.bounds.minX + boardMargin,
@@ -274,12 +320,15 @@ export const findPadClearanceViaPosition = (
   }
   if (board.minX > board.maxX || board.minY > board.maxY) return undefined
 
-  const pads = getPadRegions(srj, route, viaRadius, zLayers, connMap)
-  const isFeasible = (point: Point) =>
-    isPointInsideBounds(point, board) &&
-    pads.every((pad) => distanceToPad(point, pad) >= pad.clearance)
+  const pads = getPadRegions({ srj, route, viaRadius, zLayers, connMap })
+  const search: PadClearanceViaSearch = {
+    preferred,
+    board,
+    pads,
+    bestDistance: Number.POSITIVE_INFINITY,
+  }
   const projected = projectToBounds(preferred, board)
-  if (isFeasible(projected))
+  if (isViaPositionFeasible(projected, search))
     return isPointInsideBounds(preferred, board) ? preferred : projected
 
   // Only the connected local obstruction can displace this point. Bounding
@@ -312,32 +361,28 @@ export const findPadClearanceViaPosition = (
     createLine(topLeft, bottomLeft),
   )
 
-  let best: Point | undefined
-  let bestDistance = Number.POSITIVE_INFINITY
-  const consider = (candidate: Point) => {
-    const candidateDistance = distSq(candidate, preferred)
-    if (candidateDistance < bestDistance && isFeasible(candidate)) {
-      best = candidate
-      bestDistance = candidateDistance
-    }
-  }
   for (const boundary of boundaries) {
     for (const point of boundaryProjections(preferred, boundary))
-      consider(point)
+      considerPadClearanceViaPosition(point, search)
   }
   for (let left = 0; left < boundaries.length; left += 1) {
     const a = boundaries[left]!
-    if (distSq(preferred, projectToBounds(preferred, a.bounds)) > bestDistance)
+    if (
+      distSq(preferred, projectToBounds(preferred, a.bounds)) >
+      search.bestDistance
+    )
       continue
     for (let right = left + 1; right < boundaries.length; right += 1) {
       const b = boundaries[right]!
       if (!doBoundsOverlap(a.bounds, b.bounds)) continue
       if (
-        distSq(preferred, projectToBounds(preferred, b.bounds)) > bestDistance
+        distSq(preferred, projectToBounds(preferred, b.bounds)) >
+        search.bestDistance
       )
         continue
-      for (const point of boundaryIntersections(a, b)) consider(point)
+      for (const point of boundaryIntersections(a, b))
+        considerPadClearanceViaPosition(point, search)
     }
   }
-  return best
+  return search.best
 }

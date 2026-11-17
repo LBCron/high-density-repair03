@@ -57,13 +57,13 @@ test("via placement and relaxation clear bottom pads according to the board sett
       expect(
         getDrcSnapshot(srj, routes, undefined, undefined, engine).count,
       ).toBe(allowBlindAndBuriedVias ? 0 : 1)
-      const placement = findPadClearanceViaPosition(
+      const placement = findPadClearanceViaPosition({
         srj,
-        routes[0]!,
-        { x: 0, y: 0 },
-        0.15,
-        [0, 2],
-      )
+        route: routes[0]!,
+        preferred: { x: 0, y: 0 },
+        viaRadius: 0.15,
+        zLayers: [0, 2],
+      })
       expect(placement).toBeDefined()
       const plannedRoutes = structuredClone(routes)
       for (const index of [1, 2]) {
