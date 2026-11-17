@@ -1090,6 +1090,7 @@ export class GlobalDrcForceImproveSolver extends BaseSolver {
       }
       if (
         this.enableSafeTraceLayerMoves &&
+        shouldTryTracePairTopology &&
         traceErrorKey &&
         ((this.initialLowCountErrorsHaveMovableTraces &&
           (traceRoutePair || traceRouteIndex !== undefined)) ||
@@ -1098,12 +1099,10 @@ export class GlobalDrcForceImproveSolver extends BaseSolver {
         const traceTopologyVariants = this
           .initialLowCountErrorsHaveMovableTraces
           ? LOW_COUNT_TRACE_TOPOLOGY_VARIANTS
-          : shouldTryTracePairTopology
-            ? [
-                ...TRACE_PAIR_DISPLACEMENT_VARIANTS,
-                ...TRACE_PAIR_DETOUR_VARIANTS,
-              ]
-            : TRACE_PAIR_DISPLACEMENT_VARIANTS
+          : [
+              ...TRACE_PAIR_DISPLACEMENT_VARIANTS,
+              ...TRACE_PAIR_DETOUR_VARIANTS,
+            ]
         const detourRouteIndexes = traceRoutePair ?? [traceRouteIndex!]
         let detourCursor =
           this.tracePairDetourCursorByErrorId.get(traceErrorKey) ?? 0
