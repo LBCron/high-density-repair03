@@ -75,7 +75,7 @@ export class TraceContactRepairSolver extends BaseSolver {
     this.params = params
     this.guard = new TraceContactGuard({
       srj: params.srj,
-      inputRoutes: params.inputHdRoutes,
+      inputRoutes: [],
       connMap: params.connMap,
     })
     this.inputContactGuard = new TraceContactGuard({
