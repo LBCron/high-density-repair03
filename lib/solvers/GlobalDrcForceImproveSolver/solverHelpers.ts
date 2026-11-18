@@ -381,6 +381,8 @@ export const collectViaNodes = (
       const current = route.route[index]
       const next = route.route[index + 1]
       if (!current || !next) continue
+      // Existing plated holes provide this transition without adding a via.
+      if (current.toNextSegmentType === "through_obstacle") continue
       if (current.z === next.z || !areSameXY(current, next)) continue
       const routeSeenIndexes = (seenIndexes ??= new Set<number>())
 
