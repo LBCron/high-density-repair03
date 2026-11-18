@@ -167,7 +167,12 @@ const createSimplifiedTraces = (
   return { traces, traceRouteIndexById, traceConnectionNameById }
 }
 
-const getDrcErrorSeverity = (error: Record<string, unknown>) => {
+const getDrcErrorSeverity = (error: Record<string, unknown>): number => {
+  const minimumClearance = Number(error.minimum_clearance)
+  const actualClearance = Number(error.actual_clearance)
+  if (Number.isFinite(minimumClearance) && Number.isFinite(actualClearance)) {
+    return Math.max(0, minimumClearance - actualClearance)
+  }
   const message = typeof error.message === "string" ? error.message : ""
   const gapMatch = message.match(/gap: (-?\d+(?:\.\d+)?)mm/)
   const requiredMatch = message.match(/required: (-?\d+(?:\.\d+)?)mm/)
