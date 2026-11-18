@@ -1,4 +1,5 @@
 import { BaseSolver } from "../BaseSolver"
+import { createReferenceTraceClearanceGuard } from "./createReferenceTraceClearanceGuard"
 import type { HighDensityRoute } from "../../types/high-density-types"
 import { GlobalDrcBranchPortfolioSolver } from "./GlobalDrcBranchPortfolioSolver"
 import { TraceContactGuard } from "./TraceContactGuard"
@@ -17,12 +18,18 @@ import {
   materializeRoutesForIndexes,
 } from "./solverHelpers"
 import { restoreOverlappingConnections } from "./restoreOverlappingConnections"
-import type { DrcSnapshot, GlobalDrcBranchPortfolioSolverParams } from "./types"
+import type {
+  DrcEvaluator,
+  DrcSnapshot,
+  GlobalDrcBranchPortfolioSolverParams,
+} from "./types"
 
 export type TraceContactRepairSolverParams =
   GlobalDrcBranchPortfolioSolverParams & {
     /** Copper before any intermediate stages were allowed to defer their guard. */
     inputHdRoutes: HighDensityRoute[]
+    /** Native trace-pair validation before simplifying repaired vias. */
+    tracePairDrcEvaluator?: DrcEvaluator
   }
 type Candidate = { routes: HighDensityRoute[]; snapshot: DrcSnapshot }
 type Phase = "start" | "contacts" | "refine" | "vias" | "simplify" | "done"
@@ -67,6 +74,7 @@ export class TraceContactRepairSolver extends BaseSolver {
   private expandedBridgeSearch = false
   private viaRounds = 0
   private viaRefinementRouteIndexes?: ReadonlySet<number>
+  private simplificationReferenceGuard?: (routes: HighDensityRoute[]) => boolean
   private simplificationRounds = 0
   private outputHdRoutes: HighDensityRoute[]
 
@@ -420,6 +428,14 @@ export class TraceContactRepairSolver extends BaseSolver {
       this.finish()
       return
     }
+    this.simplificationReferenceGuard = this.params.tracePairDrcEvaluator
+      ? createReferenceTraceClearanceGuard({
+          srj: this.params.srj,
+          inputRoutes: this.current!.routes,
+          drcEvaluator: this.params.tracePairDrcEvaluator,
+          connMap: this.params.connMap,
+        })
+      : undefined
     this.proposals = getTraceViaSimplificationCandidates(this.current!.routes)
     this.candidateContactCheck = this.guard.prepareCandidateCheck(
       this.current!.routes,
@@ -495,7 +511,9 @@ export class TraceContactRepairSolver extends BaseSolver {
       if (
         snapshot.count > this.current!.snapshot.count ||
         hasNewTraceObstacleOverlaps(snapshot, this.inputSnapshot!) ||
-        countVias(routes) >= countVias(this.current!.routes)
+        countVias(routes) >= countVias(this.current!.routes) ||
+        (this.simplificationReferenceGuard &&
+          !this.simplificationReferenceGuard(routes))
       )
         return
       this.current = { routes, snapshot }
