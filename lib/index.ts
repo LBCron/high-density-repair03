@@ -5,7 +5,6 @@ export {
 } from "./solvers/GlobalDrcForceImproveSolver"
 export { AutoroutingDrcEngine } from "./drc"
 export type {
-  AutoroutingDrcContact,
   AutoroutingDrcEngineOptions,
   AutoroutingDrcEngineRunStats,
   AutoroutingDrcError,

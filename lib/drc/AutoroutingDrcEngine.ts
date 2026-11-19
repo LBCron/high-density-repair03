@@ -98,16 +98,11 @@ export type AutoroutingDrcError = {
   center?: Point
   pcb_center?: Point
   pcb_via_pair_net_relation?: "same_net" | "different_net"
-  /** Set when copper touches: what the trace is in contact with. */
-  contact?: AutoroutingDrcContact
+  pcb_trace_ids?: string[]
+  pcb_smtpad_id?: string
+  pcb_plated_hole_id?: string
   [key: string]: unknown
 }
-
-/** A trace touching another trace, another trace's via, or an obstacle. */
-export type AutoroutingDrcContact =
-  | { pcb_trace_id: string; other_pcb_trace_id: string }
-  | { pcb_trace_id: string; pcb_via_id: string; via_pcb_trace_id: string }
-  | { pcb_trace_id: string; obstacle_id: string }
 
 export interface AutoroutingDrcResult {
   errors: AutoroutingDrcError[]
@@ -1086,7 +1081,7 @@ export class AutoroutingDrcEngine {
 
     const forwardId = `overlap_${segmentA.traceId}_${segmentB.traceId}`
 
-    const error: AutoroutingDrcError = {
+    return {
       type: "pcb_trace_error",
       error_type: "pcb_trace_error",
       message: createTraceErrorMessage(
@@ -1095,6 +1090,7 @@ export class AutoroutingDrcEngine {
         gap,
       ),
       pcb_trace_id: segmentA.traceId,
+      pcb_trace_ids: [segmentA.traceId, segmentB.traceId],
       source_trace_id: "",
       pcb_trace_error_id: forwardId,
       minimum_clearance: this.traceClearance,
@@ -1105,13 +1101,6 @@ export class AutoroutingDrcEngine {
       ],
       center: getClosestPointBetweenSegments(segmentA, segmentB),
     }
-    if (gap < 0) {
-      error.contact = {
-        pcb_trace_id: segmentA.traceId,
-        other_pcb_trace_id: segmentB.traceId,
-      }
-    }
-    return error
   }
 
   private checkTraceVia(
@@ -1132,7 +1121,7 @@ export class AutoroutingDrcEngine {
 
     const errorId = `overlap_${segment.traceId}_${via.viaId}`
 
-    const error: AutoroutingDrcError = {
+    return {
       type: "pcb_trace_error",
       error_type: "pcb_trace_error",
       message: createTraceErrorMessage(
@@ -1156,14 +1145,6 @@ export class AutoroutingDrcEngine {
       pcb_port_ids: segment.pcbPortIds,
       center: getClosestPointBetweenSegmentAndPoint(segment, via),
     }
-    if (gap < 0) {
-      error.contact = {
-        pcb_trace_id: segment.traceId,
-        pcb_via_id: via.viaId,
-        via_pcb_trace_id: via.traceId,
-      }
-    }
-    return error
   }
 
   private checkTraceObstacle(
@@ -1195,8 +1176,12 @@ export class AutoroutingDrcEngine {
     if (gap + DRC_EPSILON >= this.traceClearance) return undefined
 
     const errorId = `overlap_${segment.traceId}_${obstacle.obstacleId}`
+    const obstacleIdField =
+      obstacle.obstacleType === "pcb_smtpad"
+        ? { pcb_smtpad_id: obstacle.obstacleId }
+        : { pcb_plated_hole_id: obstacle.obstacleId }
 
-    const error: AutoroutingDrcError = {
+    return {
       type: "pcb_trace_error",
       error_type: "pcb_trace_error",
       message: createTraceErrorMessage(
@@ -1205,6 +1190,7 @@ export class AutoroutingDrcEngine {
         gap,
       ),
       pcb_trace_id: segment.traceId,
+      ...obstacleIdField,
       source_trace_id: "",
       pcb_trace_error_id: errorId,
       minimum_clearance: this.traceClearance,
@@ -1227,13 +1213,6 @@ export class AutoroutingDrcEngine {
             )
           : getClosestPointBetweenSegmentAndPoint(segment, obstacle),
     }
-    if (gap < 0) {
-      error.contact = {
-        pcb_trace_id: segment.traceId,
-        obstacle_id: obstacle.obstacleId,
-      }
-    }
-    return error
   }
 
   private checkViaObstacle(

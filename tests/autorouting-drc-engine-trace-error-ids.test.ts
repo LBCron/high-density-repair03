@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { AutoroutingDrcEngine, type AutoroutingDrcContact } from "../lib"
+import { AutoroutingDrcEngine, type AutoroutingDrcError } from "../lib"
 import type { SimpleRouteJson, SimplifiedPcbTraces } from "../lib/types"
 
 type TraceRoutePoint = SimplifiedPcbTraces[number]["route"][number]
@@ -74,54 +74,66 @@ const createTraceB = (
   }
 }
 
-const getContacts = (traces: SimplifiedPcbTraces): AutoroutingDrcContact[] => {
-  const contacts: AutoroutingDrcContact[] = []
-  for (const error of new AutoroutingDrcEngine(srj).evaluate(traces).errors) {
-    if (error.contact) contacts.push(error.contact)
-  }
-  return contacts
+const getTraceBErrors = (
+  traces: SimplifiedPcbTraces,
+  engine = new AutoroutingDrcEngine(srj),
+): AutoroutingDrcError[] => {
+  return engine.evaluate(traces).errors.filter(
+    (error) =>
+      error.pcb_trace_id === "trace_b" ||
+      error.pcb_trace_ids?.includes("trace_b"),
+  )
 }
 
-test("reports the other trace when two nets' traces touch", () => {
+test("names both traces when two nets' traces touch", () => {
   const crossing = createTraceB([wire(-1, 1), wire(-1, -1)])
+  const [error] = getTraceBErrors([traceA, crossing])
 
-  const contacts = getContacts([traceA, crossing])
-
-  // The pair is reported once, from whichever trace was checked first.
-  expect(contacts).toHaveLength(1)
-  expect(contacts[0]).toContainKey("other_pcb_trace_id")
-  expect(Object.values(contacts[0]!).sort()).toEqual(["trace_a", "trace_b"])
+  expect(error?.pcb_trace_ids?.toSorted()).toEqual(["trace_a", "trace_b"])
+  expect(error?.actual_clearance).toBeLessThan(0)
 })
 
-test("reports no contact on a clearance error where no copper touches", () => {
+test("names both traces on a clearance error where no copper touches", () => {
   // 0.02mm from trace_a's edge: inside the clearance, not touching.
   const nearMiss = createTraceB([wire(-1.5, 0.12), wire(-0.5, 0.12)])
-  const { errors } = new AutoroutingDrcEngine(srj).evaluate([traceA, nearMiss])
+  const [error] = getTraceBErrors([traceA, nearMiss])
 
-  expect(errors.length).toBeGreaterThan(0)
-  expect(getContacts([traceA, nearMiss])).toEqual([])
+  expect(error?.pcb_trace_ids?.toSorted()).toEqual(["trace_a", "trace_b"])
+  expect(error?.actual_clearance).toBeGreaterThan(0)
 })
 
-test("reports the obstacle when a trace runs over another net's pad", () => {
+test("names the pad when a trace runs over another net's pad", () => {
   // The pad spans x 1.8 to 2.2; trace_b's edge at x=2.1 is 0.05mm clear of
   // trace_a's end.
   const overPad = createTraceB([wire(2.15, 1), wire(2.15, -1)])
+  const padErrors = getTraceBErrors([traceA, overPad]).filter(
+    (error) => error.pcb_smtpad_id !== undefined,
+  )
 
-  expect(getContacts([traceA, overPad])).toEqual([
-    { pcb_trace_id: "trace_b", obstacle_id: "pcb_smtpad_a" },
-  ])
+  expect(padErrors).toHaveLength(1)
+  expect(padErrors[0]).toMatchObject({
+    pcb_trace_id: "trace_b",
+    pcb_smtpad_id: "pcb_smtpad_a",
+  })
+  expect(padErrors[0]?.actual_clearance).toBeLessThan(0)
 })
 
-test("reports the via and its trace when a trace touches another net's via", () => {
+test("names the via and both traces when a trace touches another net's via", () => {
   // On top, x=0.72 clips the via at x=0.6 (radius 0.15) but clears the
   // top-layer wire, which ends at x=0.65.
   const overVia = createTraceB([wire(0.72, 1), wire(0.72, -1)])
+  const engine = new AutoroutingDrcEngine(srj, {
+    includeTraceViaOwnerMetadata: true,
+  })
+  const viaErrors = getTraceBErrors([traceA, overVia], engine).filter(
+    (error) => error.pcb_via_id !== undefined,
+  )
 
-  expect(getContacts([traceA, overVia])).toEqual([
-    {
-      pcb_trace_id: "trace_b",
-      pcb_via_id: "via_0",
-      via_pcb_trace_id: "trace_a",
-    },
-  ])
+  expect(viaErrors).toHaveLength(1)
+  expect(viaErrors[0]).toMatchObject({
+    pcb_trace_id: "trace_b",
+    pcb_via_id: "via_0",
+    pcb_trace_ids: ["trace_b", "trace_a"],
+  })
+  expect(viaErrors[0]?.actual_clearance).toBeLessThan(0)
 })
