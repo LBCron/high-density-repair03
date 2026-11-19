@@ -78,7 +78,8 @@ const getTraceBErrors = (
   traces: SimplifiedPcbTraces,
   engine = new AutoroutingDrcEngine(srj),
 ): AutoroutingDrcError[] => {
-  return engine.evaluate(traces).errors.filter(
+  const { errors } = engine.evaluate(traces)
+  return errors.filter(
     (error) =>
       error.pcb_trace_id === "trace_b" ||
       error.pcb_trace_ids?.includes("trace_b"),
