@@ -98,6 +98,8 @@ export type AutoroutingDrcError = {
   center?: Point
   pcb_center?: Point
   pcb_via_pair_net_relation?: "same_net" | "different_net"
+  // Engine-only, like actual_clearance: not in circuit-json's
+  // pcb_trace_error. Named after circuit-json's typed id fields.
   pcb_trace_ids?: string[]
   pcb_smtpad_id?: string
   pcb_plated_hole_id?: string
