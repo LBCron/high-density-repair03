@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { AutoroutingDrcEngine } from "../lib"
+import { AutoroutingDrcEngine, type AutoroutingDrcContact } from "../lib"
 import type { SimpleRouteJson, SimplifiedPcbTraces } from "../lib/types"
 
 type TraceRoutePoint = SimplifiedPcbTraces[number]["route"][number]
@@ -74,44 +74,54 @@ const createTraceB = (
   }
 }
 
-/** The sorted contact_ids of every error that reports copper touching. */
-const getContactIds = (traces: SimplifiedPcbTraces): string[][] => {
-  const contactIds: string[][] = []
+const getContacts = (traces: SimplifiedPcbTraces): AutoroutingDrcContact[] => {
+  const contacts: AutoroutingDrcContact[] = []
   for (const error of new AutoroutingDrcEngine(srj).evaluate(traces).errors) {
-    if (error.contact_ids) contactIds.push([...error.contact_ids].sort())
+    if (error.contact) contacts.push(error.contact)
   }
-  return contactIds
+  return contacts
 }
 
-test("names both traces in contact_ids when two nets' traces touch", () => {
+test("reports the other trace when two nets' traces touch", () => {
   const crossing = createTraceB([wire(-1, 1), wire(-1, -1)])
 
-  expect(getContactIds([traceA, crossing])).toEqual([["trace_a", "trace_b"]])
+  const contacts = getContacts([traceA, crossing])
+
+  // The pair is reported once, from whichever trace was checked first.
+  expect(contacts).toHaveLength(1)
+  expect(contacts[0]).toContainKey("other_pcb_trace_id")
+  expect(Object.values(contacts[0]!).sort()).toEqual(["trace_a", "trace_b"])
 })
 
-test("leaves contact_ids off a clearance error where no copper touches", () => {
+test("reports no contact on a clearance error where no copper touches", () => {
   // 0.02mm from trace_a's edge: inside the clearance, not touching.
   const nearMiss = createTraceB([wire(-1.5, 0.12), wire(-0.5, 0.12)])
   const { errors } = new AutoroutingDrcEngine(srj).evaluate([traceA, nearMiss])
 
   expect(errors.length).toBeGreaterThan(0)
-  expect(getContactIds([traceA, nearMiss])).toEqual([])
+  expect(getContacts([traceA, nearMiss])).toEqual([])
 })
 
-test("names the trace and pad in contact_ids when a trace runs over another net's pad", () => {
+test("reports the obstacle when a trace runs over another net's pad", () => {
   // The pad spans x 1.8 to 2.2; trace_b's edge at x=2.1 is 0.05mm clear of
   // trace_a's end.
   const overPad = createTraceB([wire(2.15, 1), wire(2.15, -1)])
 
-  expect(getContactIds([traceA, overPad])).toEqual([
-    ["pcb_smtpad_a", "trace_b"],
+  expect(getContacts([traceA, overPad])).toEqual([
+    { pcb_trace_id: "trace_b", obstacle_id: "pcb_smtpad_a" },
   ])
 })
 
-test("names a via by its trace in contact_ids", () => {
+test("reports the via and its trace when a trace touches another net's via", () => {
   // On top, x=0.72 clips the via at x=0.6 (radius 0.15) but clears the
   // top-layer wire, which ends at x=0.65.
   const overVia = createTraceB([wire(0.72, 1), wire(0.72, -1)])
 
-  expect(getContactIds([traceA, overVia])).toEqual([["trace_a", "trace_b"]])
+  expect(getContacts([traceA, overVia])).toEqual([
+    {
+      pcb_trace_id: "trace_b",
+      pcb_via_id: "via_0",
+      via_pcb_trace_id: "trace_a",
+    },
+  ])
 })

@@ -98,10 +98,16 @@ export type AutoroutingDrcError = {
   center?: Point
   pcb_center?: Point
   pcb_via_pair_net_relation?: "same_net" | "different_net"
-  /** Set when copper touches: the two objects in contact. */
-  contact_ids?: readonly [string, string]
+  /** Set when copper touches: what the trace is in contact with. */
+  contact?: AutoroutingDrcContact
   [key: string]: unknown
 }
+
+/** A trace touching another trace, another trace's via, or an obstacle. */
+export type AutoroutingDrcContact =
+  | { pcb_trace_id: string; other_pcb_trace_id: string }
+  | { pcb_trace_id: string; pcb_via_id: string; via_pcb_trace_id: string }
+  | { pcb_trace_id: string; obstacle_id: string }
 
 export interface AutoroutingDrcResult {
   errors: AutoroutingDrcError[]
@@ -1099,7 +1105,12 @@ export class AutoroutingDrcEngine {
       ],
       center: getClosestPointBetweenSegments(segmentA, segmentB),
     }
-    if (gap < 0) error.contact_ids = [segmentA.traceId, segmentB.traceId]
+    if (gap < 0) {
+      error.contact = {
+        pcb_trace_id: segmentA.traceId,
+        other_pcb_trace_id: segmentB.traceId,
+      }
+    }
     return error
   }
 
@@ -1145,8 +1156,13 @@ export class AutoroutingDrcEngine {
       pcb_port_ids: segment.pcbPortIds,
       center: getClosestPointBetweenSegmentAndPoint(segment, via),
     }
-    // A via is named by its trace, which is stable across evaluations.
-    if (gap < 0) error.contact_ids = [segment.traceId, via.traceId]
+    if (gap < 0) {
+      error.contact = {
+        pcb_trace_id: segment.traceId,
+        pcb_via_id: via.viaId,
+        via_pcb_trace_id: via.traceId,
+      }
+    }
     return error
   }
 
@@ -1211,7 +1227,12 @@ export class AutoroutingDrcEngine {
             )
           : getClosestPointBetweenSegmentAndPoint(segment, obstacle),
     }
-    if (gap < 0) error.contact_ids = [segment.traceId, obstacle.obstacleId]
+    if (gap < 0) {
+      error.contact = {
+        pcb_trace_id: segment.traceId,
+        obstacle_id: obstacle.obstacleId,
+      }
+    }
     return error
   }
 
