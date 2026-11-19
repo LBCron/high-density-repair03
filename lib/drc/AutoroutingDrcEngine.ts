@@ -1178,8 +1178,8 @@ export class AutoroutingDrcEngine {
     const errorId = `overlap_${segment.traceId}_${obstacle.obstacleId}`
     const obstacleIdField =
       obstacle.obstacleType === "pcb_smtpad"
-        ? { pcb_smtpad_id: obstacle.obstacleId }
-        : { pcb_plated_hole_id: obstacle.obstacleId }
+        ? "pcb_smtpad_id"
+        : "pcb_plated_hole_id"
 
     return {
       type: "pcb_trace_error",
@@ -1190,7 +1190,7 @@ export class AutoroutingDrcEngine {
         gap,
       ),
       pcb_trace_id: segment.traceId,
-      ...obstacleIdField,
+      [obstacleIdField]: obstacle.obstacleId,
       source_trace_id: "",
       pcb_trace_error_id: errorId,
       minimum_clearance: this.traceClearance,
