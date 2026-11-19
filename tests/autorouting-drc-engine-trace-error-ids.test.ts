@@ -19,6 +19,14 @@ const srj: SimpleRouteJson = {
       height: 0.4,
       connectedTo: ["pcb_smtpad_a", "net_a"],
     },
+    {
+      type: "rect",
+      layers: ["top", "bottom"],
+      center: { x: 0, y: -2 },
+      width: 0.6,
+      height: 0.6,
+      connectedTo: ["pcb_plated_hole_a", "net_a"],
+    },
   ],
   layerCount: 2,
   minTraceWidth: 0.1,
@@ -116,7 +124,24 @@ test("names the pad when a trace runs over another net's pad", () => {
     pcb_trace_id: "trace_b",
     pcb_smtpad_id: "pcb_smtpad_a",
   })
+  expect(padErrors[0]).not.toHaveProperty("pcb_plated_hole_id")
   expect(padErrors[0]?.actual_clearance).toBeLessThan(0)
+})
+
+test("names the plated hole when a trace runs over another net's plated hole", () => {
+  // The plated hole spans y -2.3 to -1.7 on both copper layers.
+  const overPlatedHole = createTraceB([wire(-1, -2), wire(1, -2)])
+  const holeErrors = getTraceBErrors([traceA, overPlatedHole]).filter(
+    (error) => error.pcb_plated_hole_id !== undefined,
+  )
+
+  expect(holeErrors).toHaveLength(1)
+  expect(holeErrors[0]).toMatchObject({
+    pcb_trace_id: "trace_b",
+    pcb_plated_hole_id: "pcb_plated_hole_a",
+  })
+  expect(holeErrors[0]).not.toHaveProperty("pcb_smtpad_id")
+  expect(holeErrors[0]?.actual_clearance).toBeLessThan(0)
 })
 
 test("names the via and both traces when a trace touches another net's via", () => {
