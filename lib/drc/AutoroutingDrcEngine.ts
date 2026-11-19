@@ -98,6 +98,8 @@ export type AutoroutingDrcError = {
   center?: Point
   pcb_center?: Point
   pcb_via_pair_net_relation?: "same_net" | "different_net"
+  /** Set when copper touches: the two objects in contact. */
+  contact_ids?: readonly [string, string]
   [key: string]: unknown
 }
 
@@ -1078,7 +1080,7 @@ export class AutoroutingDrcEngine {
 
     const forwardId = `overlap_${segmentA.traceId}_${segmentB.traceId}`
 
-    return {
+    const error: AutoroutingDrcError = {
       type: "pcb_trace_error",
       error_type: "pcb_trace_error",
       message: createTraceErrorMessage(
@@ -1097,6 +1099,8 @@ export class AutoroutingDrcEngine {
       ],
       center: getClosestPointBetweenSegments(segmentA, segmentB),
     }
+    if (gap < 0) error.contact_ids = [segmentA.traceId, segmentB.traceId]
+    return error
   }
 
   private checkTraceVia(
@@ -1117,7 +1121,7 @@ export class AutoroutingDrcEngine {
 
     const errorId = `overlap_${segment.traceId}_${via.viaId}`
 
-    return {
+    const error: AutoroutingDrcError = {
       type: "pcb_trace_error",
       error_type: "pcb_trace_error",
       message: createTraceErrorMessage(
@@ -1141,6 +1145,9 @@ export class AutoroutingDrcEngine {
       pcb_port_ids: segment.pcbPortIds,
       center: getClosestPointBetweenSegmentAndPoint(segment, via),
     }
+    // A via is named by its trace, which is stable across evaluations.
+    if (gap < 0) error.contact_ids = [segment.traceId, via.traceId]
+    return error
   }
 
   private checkTraceObstacle(
@@ -1173,7 +1180,7 @@ export class AutoroutingDrcEngine {
 
     const errorId = `overlap_${segment.traceId}_${obstacle.obstacleId}`
 
-    return {
+    const error: AutoroutingDrcError = {
       type: "pcb_trace_error",
       error_type: "pcb_trace_error",
       message: createTraceErrorMessage(
@@ -1204,6 +1211,8 @@ export class AutoroutingDrcEngine {
             )
           : getClosestPointBetweenSegmentAndPoint(segment, obstacle),
     }
+    if (gap < 0) error.contact_ids = [segment.traceId, obstacle.obstacleId]
+    return error
   }
 
   private checkViaObstacle(
