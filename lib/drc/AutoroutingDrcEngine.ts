@@ -98,6 +98,11 @@ export type AutoroutingDrcError = {
   center?: Point
   pcb_center?: Point
   pcb_via_pair_net_relation?: "same_net" | "different_net"
+  // Engine-only, like actual_clearance: not in circuit-json's
+  // pcb_trace_error. Named after circuit-json's typed id fields.
+  pcb_trace_ids?: string[]
+  pcb_smtpad_id?: string
+  pcb_plated_hole_id?: string
   [key: string]: unknown
 }
 
@@ -1087,6 +1092,7 @@ export class AutoroutingDrcEngine {
         gap,
       ),
       pcb_trace_id: segmentA.traceId,
+      pcb_trace_ids: [segmentA.traceId, segmentB.traceId],
       source_trace_id: "",
       pcb_trace_error_id: forwardId,
       minimum_clearance: this.traceClearance,
@@ -1172,6 +1178,10 @@ export class AutoroutingDrcEngine {
     if (gap + DRC_EPSILON >= this.traceClearance) return undefined
 
     const errorId = `overlap_${segment.traceId}_${obstacle.obstacleId}`
+    const obstacleIdField =
+      obstacle.obstacleType === "pcb_smtpad"
+        ? "pcb_smtpad_id"
+        : "pcb_plated_hole_id"
 
     return {
       type: "pcb_trace_error",
@@ -1182,6 +1192,7 @@ export class AutoroutingDrcEngine {
         gap,
       ),
       pcb_trace_id: segment.traceId,
+      [obstacleIdField]: obstacle.obstacleId,
       source_trace_id: "",
       pcb_trace_error_id: errorId,
       minimum_clearance: this.traceClearance,
